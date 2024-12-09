@@ -1,57 +1,70 @@
-import express, { json } from "express";
+import express from "express"
 import dotenv from "dotenv";
+import {Server} from "socket.io";
 import http from "http";
-import { Server } from "socket.io";
-import cors from "cors";
+import cors from "cors"
+import {connectToTheDatabase} from "./utils/database.js"
+import { error } from "console";
+import userRoutes from "./routes/route.js"
+import users from "./dataSchemas/users.js";
 
-// Load environment variables
 dotenv.config();
 
 const corsOptions = {
-    origin: "http://localhost:5173/", // Frontend URL
-    methods: ["GET", "POST"],
-};
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST"]
+}
 
-// Setting up Express app and Socket.IO server
 const app = express();
+const server  = http.createServer(app);
 app.use(cors(corsOptions));
-app.use(json());
+app.use(express.json());
 
-const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+    cors: {
+        origin: "http://localhost:5173",
+        methods: ["GET", "POST"]
+    }
+});
 
-// Listening for socket connections
 io.on("connection", (socket) => {
-    console.log("User Connected");
-
-    // Listening for chat messages from client
-    socket.on("Chat message", (msg) => {
-        console.log("Received message:", msg); // Log the received message on the server
-        io.emit("Chat message", msg); // Broadcast the message to all connected clients
+    console.log("User connected");
+  
+    socket.on("join chat", (userId) => {
+      socket.join(userId);
+      console.log(`User ${userId} joined room`);
     });
-
+  
+    socket.on("private message", ({ senderId, receiverId, message }) => {
+      io.to(receiverId).emit("private message", { senderId, message });
+      console.log(`Message from ${senderId} to ${receiverId}: ${message}`);
+    });
+  
     socket.on("disconnect", () => {
-        console.log("User Disconnected");
+      console.log("User disconnected");
     });
 });
+  
 
-// User data
-const users = [
-    { name: "Timo", age: 20, address: "Nairobi, Ruiru" },
-    { name: "Erick", age: 25, address: "Embu, Majimbo" }
-];
+//Routes
+app.use("/api", userRoutes);
 
-// Routes
-app.get("/", (req, res) => {
-    res.status(200).send("Hello, server is running");
-});
+app.use((error, req, res, next) => {
+    const errorMessage = error.message || "Something went wrong";
+    const errorStatus = error.status || 500;
+    res.status(errorStatus).json({
+        success: false,
+        status: errorStatus,
+        message: errorMessage,
+        stack: errorMessage.stack,
+    });
+})
 
-app.get("/users", (req, res) => {
-    res.status(200).json(users); // Return users list
-});
 
-// Start server
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server is running at http://localhost:${PORT}`);
+
+
+
+server.listen(process.env.PORT, () => {
+    console.log(`Server running at ----> http://locaolhost:${process.env.PORT}`);
+    connectToTheDatabase();
 });
